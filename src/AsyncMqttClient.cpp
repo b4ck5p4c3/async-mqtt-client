@@ -37,7 +37,13 @@ AsyncMqttClient::AsyncMqttClient()
 , _onUnsubscribeUserCallbacks()
 , _onMessageUserCallbacks()
 , _onPublishUserCallbacks()
-, _parsingInformation { .bufferState = AsyncMqttClientInternals::BufferState::NONE }
+, _parsingInformation { .bufferState = AsyncMqttClientInternals::BufferState::NONE,
+  .maxTopicLength = 0,
+  .topicBuffer = NULL,
+  .packetType = 0,
+  .packetFlags = 0,
+  .remainingLength = 0
+}
 , _currentParsedPacket(nullptr)
 , _remainingLengthBufferPosition(0)
 , _remainingLengthBuffer{0}
@@ -136,7 +142,14 @@ AsyncMqttClient& AsyncMqttClient::addServerFingerprint(const uint8_t* fingerprin
   _secureServerFingerprints.push_back(newFingerprint);
   return *this;
 }
+#ifdef ESP32
+AsyncMqttClient& AsyncMqttClient::setRootCa(const char* rootca, const size_t len) {
+  _client.setRootCa(rootca, len);
+  return *this;
+}
 #endif
+#endif
+
 
 AsyncMqttClient& AsyncMqttClient::onConnect(AsyncMqttClientInternals::OnConnectUserCallback callback) {
   _onConnectUserCallbacks.push_back(callback);
@@ -187,6 +200,7 @@ void AsyncMqttClient::_clear() {
 void AsyncMqttClient::_onConnect() {
   log_i("TCP conn, MQTT CONNECT");
 #if ASYNC_TCP_SSL_ENABLED
+#ifndef ESP32
   if (_secure && _secureServerFingerprints.size() > 0) {
     SSL* clientSsl = _client.getSSL();
 
@@ -204,6 +218,7 @@ void AsyncMqttClient::_onConnect() {
       return;
     }
   }
+#endif
 #endif
   AsyncMqttClientInternals::OutPacket* msg =
   new AsyncMqttClientInternals::ConnectOutPacket(_cleanSession,
@@ -451,7 +466,7 @@ void AsyncMqttClient::_clearQueue(bool keepSessionData) {
      *  - QoS 1 and QoS 2 messages which have been sent to the Server, but have not been completely acknowledged.
      *  - QoS 2 messages which have been received from the Server, but have not been completely acknowledged.
      * + (unsent PUB messages with QoS > 0)
-     * 
+     *
      * To be kept:
      * - possibly first message (sent to server but not acked)
      * - PUBREC messages (QoS 2 PUB received but not acked)
